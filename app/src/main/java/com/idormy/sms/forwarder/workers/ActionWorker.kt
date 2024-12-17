@@ -28,6 +28,7 @@ import com.idormy.sms.forwarder.entity.action.SmsSetting
 import com.idormy.sms.forwarder.entity.action.TaskActionSetting
 import com.idormy.sms.forwarder.service.HttpServerService
 import com.idormy.sms.forwarder.service.LocationService
+import com.idormy.sms.forwarder.utils.ACTION_RESTART
 import com.idormy.sms.forwarder.utils.CacheUtils
 import com.idormy.sms.forwarder.utils.EVENT_ALARM_ACTION
 import com.idormy.sms.forwarder.utils.EVENT_TOAST_ERROR
@@ -68,10 +69,10 @@ class ActionWorker(context: Context, params: WorkerParameters) : CoroutineWorker
     private var taskId = -1L
 
     override suspend fun doWork(): Result {
-        taskId = inputData.getLong(TaskWorker.taskId, -1L)
-        val taskConditionsJson = inputData.getString(TaskWorker.taskConditions)
-        val taskActionsJson = inputData.getString(TaskWorker.taskActions)
-        val msgInfoJson = inputData.getString(TaskWorker.msgInfo)
+        taskId = inputData.getLong(TaskWorker.TASK_ID, -1L)
+        val taskConditionsJson = inputData.getString(TaskWorker.TASK_CONDITIONS)
+        val taskActionsJson = inputData.getString(TaskWorker.TASK_ACTIONS)
+        val msgInfoJson = inputData.getString(TaskWorker.MSG_INFO)
         Log.d(TAG, "taskId: $taskId, taskActionsJson: $taskActionsJson, msgInfoJson: $msgInfoJson")
         if (taskId == -1L || taskActionsJson.isNullOrEmpty() || msgInfoJson.isNullOrEmpty()) {
             Log.d(TAG, "taskId is -1L or actionSetting is null")
@@ -127,7 +128,9 @@ class ActionWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                         val msg = if (ActivityCompat.checkSelfPermission(App.context, Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
                             getString(R.string.no_sms_sending_permission)
                         } else {
-                            PhoneUtils.sendSms(mSubscriptionId, smsSetting.phoneNumbers, smsSetting.msgContent)
+                            val mobileList = msgInfo.replaceTemplate(smsSetting.phoneNumbers)
+                            val message = msgInfo.replaceTemplate(smsSetting.msgContent)
+                            PhoneUtils.sendSms(mSubscriptionId, mobileList, message)
                         }
                         if (msg == null || msg == "") {
                             successNum++
@@ -139,11 +142,14 @@ class ActionWorker(context: Context, params: WorkerParameters) : CoroutineWorker
 
                     TASK_ACTION_NOTIFICATION -> {
                         val ruleSetting = Gson().fromJson(action.setting, Rule::class.java)
+                        //重新查询发送通道最新设置
+                        val ids = ruleSetting.senderList.joinToString(",") { it.id.toString() }
+                        ruleSetting.senderList = Core.sender.getByIds(ids.split(",").map { it.trim().toLong() }, ids)
                         //自动任务的不需要吐司或者更新日志，特殊处理 logId = -1，msgId = -1
                         SendUtils.sendMsgSender(msgInfo, ruleSetting, 0, -1L, -1L)
 
                         successNum++
-                        writeLog(String.format(getString(R.string.successful_execution), ruleSetting.name), "SUCCESS")
+                        writeLog(String.format(getString(R.string.successful_execution), ruleSetting.getName()), "SUCCESS")
                     }
 
                     TASK_ACTION_CLEANER -> {
@@ -200,7 +206,7 @@ class ActionWorker(context: Context, params: WorkerParameters) : CoroutineWorker
 
                         if (settingsSetting.enableLocation) {
                             val serviceIntent = Intent(App.context, LocationService::class.java)
-                            serviceIntent.action = "RESTART"
+                            serviceIntent.action = ACTION_RESTART
                             App.context.startService(serviceIntent)
                         }
 

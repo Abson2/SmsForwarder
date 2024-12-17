@@ -8,6 +8,7 @@ import com.idormy.sms.forwarder.entity.setting.WeworkRobotSetting
 import com.idormy.sms.forwarder.utils.Log
 import com.idormy.sms.forwarder.utils.SendUtils
 import com.idormy.sms.forwarder.utils.SettingUtils
+import com.idormy.sms.forwarder.utils.interceptor.LoggingInterceptor
 import com.xuexiang.xhttp2.XHttp
 import com.xuexiang.xhttp2.callback.SimpleCallBack
 import com.xuexiang.xhttp2.exception.ApiException
@@ -35,7 +36,7 @@ class WeworkRobotUtils private constructor() {
             Log.i(TAG, "requestUrl:$requestUrl")
 
             val msgMap: MutableMap<String, Any> = mutableMapOf()
-            msgMap["msgtype"] = setting.msgType
+            msgMap["msgtype"] = if (setting.msgType == "markdown") "markdown" else "text"
 
             val contextMap = mutableMapOf<String, Any>()
             contextMap["content"] = content
@@ -43,14 +44,14 @@ class WeworkRobotUtils private constructor() {
             if (setting.msgType == "markdown") {
                 msgMap["markdown"] = contextMap
             } else {
-                if (setting.atAll == true) {
+                if (setting.atAll) {
                     contextMap["mentioned_list"] = arrayListOf("@all")
                 } else {
-                    if (!setting.atUserIds.isNullOrEmpty()) {
-                        contextMap["mentioned_list"] = setting.atUserIds!!.split(",")
+                    if (setting.atUserIds.isNotEmpty()) {
+                        contextMap["mentioned_list"] = setting.atUserIds.split(",")
                     }
-                    if (!setting.atMobiles.isNullOrEmpty()) {
-                        contextMap["mentioned_mobile_list"] = setting.atMobiles!!.split(",")
+                    if (setting.atMobiles.isNotEmpty()) {
+                        contextMap["mentioned_mobile_list"] = setting.atMobiles.split(",")
                     }
                 }
                 msgMap["text"] = contextMap

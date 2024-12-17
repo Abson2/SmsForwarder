@@ -3,6 +3,8 @@ package com.idormy.sms.forwarder
 import android.annotation.SuppressLint
 import android.app.Application
 import android.app.PendingIntent
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -18,19 +20,38 @@ import com.gyf.cactus.Cactus
 import com.gyf.cactus.callback.CactusCallback
 import com.gyf.cactus.ext.cactus
 import com.hjq.language.MultiLanguages
+import com.hjq.language.OnLanguageListener
 import com.idormy.sms.forwarder.activity.MainActivity
 import com.idormy.sms.forwarder.core.Core
 import com.idormy.sms.forwarder.database.AppDatabase
-import com.idormy.sms.forwarder.database.repository.*
+import com.idormy.sms.forwarder.database.repository.FrpcRepository
+import com.idormy.sms.forwarder.database.repository.LogsRepository
+import com.idormy.sms.forwarder.database.repository.MsgRepository
+import com.idormy.sms.forwarder.database.repository.RuleRepository
+import com.idormy.sms.forwarder.database.repository.SenderRepository
+import com.idormy.sms.forwarder.database.repository.TaskRepository
 import com.idormy.sms.forwarder.entity.SimInfo
 import com.idormy.sms.forwarder.receiver.BatteryReceiver
+import com.idormy.sms.forwarder.receiver.BluetoothReceiver
 import com.idormy.sms.forwarder.receiver.CactusReceiver
 import com.idormy.sms.forwarder.receiver.LockScreenReceiver
 import com.idormy.sms.forwarder.receiver.NetworkChangeReceiver
+import com.idormy.sms.forwarder.service.BluetoothScanService
 import com.idormy.sms.forwarder.service.ForegroundService
 import com.idormy.sms.forwarder.service.HttpServerService
 import com.idormy.sms.forwarder.service.LocationService
-import com.idormy.sms.forwarder.utils.*
+import com.idormy.sms.forwarder.utils.ACTION_START
+import com.idormy.sms.forwarder.utils.AppInfo
+import com.idormy.sms.forwarder.utils.CactusSave
+import com.idormy.sms.forwarder.utils.FRONT_CHANNEL_ID
+import com.idormy.sms.forwarder.utils.FRONT_CHANNEL_NAME
+import com.idormy.sms.forwarder.utils.FRONT_NOTIFY_ID
+import com.idormy.sms.forwarder.utils.FRPC_LIB_VERSION
+import com.idormy.sms.forwarder.utils.HistoryUtils
+import com.idormy.sms.forwarder.utils.HttpServerUtils
+import com.idormy.sms.forwarder.utils.Log
+import com.idormy.sms.forwarder.utils.SettingUtils
+import com.idormy.sms.forwarder.utils.SharedPreference
 import com.idormy.sms.forwarder.utils.sdkinit.UMengInit
 import com.idormy.sms.forwarder.utils.sdkinit.XBasicLibInit
 import com.idormy.sms.forwarder.utils.sdkinit.XUpdateInit
@@ -42,13 +63,16 @@ import io.reactivex.Observable
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.Disposable
 import io.reactivex.schedulers.Schedulers
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import java.io.BufferedWriter
 import java.io.File
 import java.io.FileWriter
 import java.io.IOException
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
 @Suppress("DEPRECATION")
@@ -68,6 +92,24 @@ class App : Application(), CactusCallback, Configuration.Provider by Core {
 
         @SuppressLint("StaticFieldLeak")
         lateinit var context: Context
+
+        //自定义模板可用变量标签
+        var COMMON_TAG_MAP: MutableMap<String, String> = mutableMapOf()
+        var SMS_TAG_MAP: MutableMap<String, String> = mutableMapOf()
+        var CALL_TAG_MAP: MutableMap<String, String> = mutableMapOf()
+        var APP_TAG_MAP: MutableMap<String, String> = mutableMapOf()
+        var LOCATION_TAG_MAP: MutableMap<String, String> = mutableMapOf()
+        var BATTERY_TAG_MAP: MutableMap<String, String> = mutableMapOf()
+        var NETWORK_TAG_MAP: MutableMap<String, String> = mutableMapOf()
+
+        //通话类型：1.来电挂机 2.去电挂机 3.未接来电 4.来电提醒 5.来电接通 6.去电拨出
+        var CALL_TYPE_MAP: MutableMap<String, String> = mutableMapOf()
+        var FILED_MAP: MutableMap<String, String> = mutableMapOf()
+        var CHECK_MAP: MutableMap<String, String> = mutableMapOf()
+        var SIM_SLOT_MAP: MutableMap<String, String> = mutableMapOf()
+        var FORWARD_STATUS_MAP: MutableMap<Int, String> = mutableMapOf()
+        var BARK_LEVEL_MAP: MutableMap<String, String> = mutableMapOf()
+        var BARK_ENCRYPTION_ALGORITHM_MAP: MutableMap<String, String> = mutableMapOf()
 
         //已插入SIM卡信息
         var SimInfoList: MutableMap<Int, SimInfo> = mutableMapOf()
@@ -96,6 +138,9 @@ class App : Application(), CactusCallback, Configuration.Provider by Core {
 
         //Frpclib是否已经初始化
         var FrpclibInited = false
+
+        //是否需要在拼接字符串时添加空格
+        var isNeedSpaceBetweenWords = false
     }
 
     override fun attachBaseContext(base: Context) {
@@ -154,7 +199,7 @@ class App : Application(), CactusCallback, Configuration.Provider by Core {
 
             //启动前台服务
             val foregroundServiceIntent = Intent(this, ForegroundService::class.java)
-            foregroundServiceIntent.action = "START"
+            foregroundServiceIntent.action = ACTION_START
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(foregroundServiceIntent)
             } else {
@@ -171,7 +216,7 @@ class App : Application(), CactusCallback, Configuration.Provider by Core {
             //启动LocationService
             if (SettingUtils.enableLocation) {
                 val locationServiceIntent = Intent(this, LocationService::class.java)
-                locationServiceIntent.action = "START"
+                locationServiceIntent.action = ACTION_START
                 startService(locationServiceIntent)
             }
 
@@ -179,6 +224,26 @@ class App : Application(), CactusCallback, Configuration.Provider by Core {
             val batteryReceiver = BatteryReceiver()
             val batteryFilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
             registerReceiver(batteryReceiver, batteryFilter)
+
+            //监听蓝牙状态变化
+            val bluetoothReceiver = BluetoothReceiver()
+            val filter = IntentFilter().apply {
+                addAction(BluetoothDevice.ACTION_FOUND)
+                addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED)
+                addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
+                addAction(BluetoothAdapter.ACTION_SCAN_MODE_CHANGED)
+                addAction(BluetoothAdapter.ACTION_LOCAL_NAME_CHANGED)
+                addAction(BluetoothAdapter.ACTION_CONNECTION_STATE_CHANGED)
+                addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+                addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
+                addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
+            }
+            registerReceiver(bluetoothReceiver, filter)
+            if (SettingUtils.enableBluetooth) {
+                val bluetoothScanServiceIntent = Intent(this, BluetoothScanService::class.java)
+                bluetoothScanServiceIntent.action = ACTION_START
+                startService(bluetoothScanServiceIntent)
+            }
 
             //监听网络变化
             val networkReceiver = NetworkChangeReceiver()
@@ -234,7 +299,7 @@ class App : Application(), CactusCallback, Configuration.Provider by Core {
                     if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P && SettingUtils.enableOnePixelActivity) {
                         setOnePixEnabled(true)
                     }
-                    //奔溃是否可以重启用户界面
+                    //崩溃是否可以重启用户界面
                     setCrashRestartUIEnabled(true)
                     addCallback({
                         Log.d(TAG, "Cactus保活：onStop回调")
@@ -261,13 +326,13 @@ class App : Application(), CactusCallback, Configuration.Provider by Core {
         Core.init(this)
         // 配置文件初始化
         SharedPreference.init(applicationContext)
+        // X系列基础库初始化
+        XBasicLibInit.init(this)
         // 初始化日志打印
         isDebug = SettingUtils.enableDebugMode
         Log.init(applicationContext)
         // 转发历史工具类初始化
         HistoryUtils.init(applicationContext)
-        // X系列基础库初始化
-        XBasicLibInit.init(this)
         // 版本更新初始化
         XUpdateInit.init(this)
         // 运营统计数据
@@ -275,21 +340,24 @@ class App : Application(), CactusCallback, Configuration.Provider by Core {
         // 初始化语种切换框架
         MultiLanguages.init(this)
         // 设置语种变化监听器
-        /*MultiLanguages.setOnLanguageListener(object : OnLanguageListener {
+        MultiLanguages.setOnLanguageListener(object : OnLanguageListener {
             override fun onAppLocaleChange(oldLocale: Locale, newLocale: Locale) {
                 // 注意：只有setAppLanguage时触发，clearAppLanguage时不触发
                 Log.i(TAG, "监听到应用切换了语种，旧语种：$oldLocale，新语种：$newLocale")
+                switchLanguage(newLocale)
             }
 
             override fun onSystemLocaleChange(oldLocale: Locale, newLocale: Locale) {
-                //val isFlowSystem = MultiLanguages.isSystemLanguage(context) //取值不对，一直是false
-                val isFlowSystem = SettingUtils.isFlowSystemLanguage
+                Log.i(TAG, "监听到系统切换了语种，旧语种：$oldLocale，新语种：$newLocale")
+                switchLanguage(newLocale)
+                /*val isFlowSystem = SettingUtils.isFlowSystemLanguage //MultiLanguages.isSystemLanguage(context)取值不对，一直是false
                 Log.i(TAG, "监听到系统切换了语种，旧语种：$oldLocale，新语种：$newLocale，是否跟随系统：$isFlowSystem")
                 if (isFlowSystem) {
                     CommonUtils.switchLanguage(oldLocale, newLocale)
-                }
+                }*/
             }
-        })*/
+        })
+        switchLanguage(MultiLanguages.getAppLanguage(this))
     }
 
     @SuppressLint("CheckResult")
@@ -325,6 +393,159 @@ class App : Application(), CactusCallback, Configuration.Provider by Core {
                 dispose()
             }
         }
+    }
+
+    //多语言切换时枚举常量自动切换语言
+    private fun switchLanguage(newLocale: Locale) {
+        isNeedSpaceBetweenWords = !newLocale.language.contains("zh")
+
+        //自定义模板可用变量标签
+        COMMON_TAG_MAP.clear()
+        COMMON_TAG_MAP.putAll(
+            mapOf(
+                getString(R.string.tag_receive_time) to getString(R.string.insert_tag_receive_time),
+                getString(R.string.tag_current_time) to getString(R.string.insert_tag_current_time),
+                getString(R.string.tag_device_name) to getString(R.string.insert_tag_device_name),
+                getString(R.string.tag_app_version) to getString(R.string.insert_tag_app_version),
+            )
+        )
+        SMS_TAG_MAP.clear()
+        SMS_TAG_MAP.putAll(
+            mapOf(
+                getString(R.string.tag_from) to getString(R.string.insert_tag_from),
+                getString(R.string.tag_sms) to getString(R.string.insert_tag_sms),
+                getString(R.string.tag_card_slot) to getString(R.string.insert_tag_card_slot),
+                getString(R.string.tag_card_subid) to getString(R.string.insert_tag_card_subid),
+            )
+        )
+        CALL_TAG_MAP.clear()
+        CALL_TAG_MAP.putAll(
+            mapOf(
+                getString(R.string.tag_from) to getString(R.string.insert_tag_from),
+                getString(R.string.tag_sms) to getString(R.string.insert_tag_msg),
+                getString(R.string.tag_card_slot) to getString(R.string.insert_tag_card_slot),
+                getString(R.string.tag_card_subid) to getString(R.string.insert_tag_card_subid),
+                getString(R.string.tag_call_type) to getString(R.string.insert_tag_call_type),
+            )
+        )
+        APP_TAG_MAP.clear()
+        APP_TAG_MAP.putAll(
+            mapOf(
+                getString(R.string.tag_uid) to getString(R.string.insert_tag_uid),
+                getString(R.string.tag_package_name) to getString(R.string.insert_tag_package_name),
+                getString(R.string.tag_app_name) to getString(R.string.insert_tag_app_name),
+                getString(R.string.tag_title) to getString(R.string.insert_tag_title),
+                getString(R.string.tag_msg) to getString(R.string.insert_tag_msg),
+            )
+        )
+        LOCATION_TAG_MAP.clear()
+        LOCATION_TAG_MAP.putAll(
+            mapOf(
+                getString(R.string.tag_location) to getString(R.string.insert_tag_location),
+                getString(R.string.tag_location_longitude) to getString(R.string.insert_tag_location_longitude),
+                getString(R.string.tag_location_latitude) to getString(R.string.insert_tag_location_latitude),
+                getString(R.string.tag_location_address) to getString(R.string.insert_tag_location_address),
+            )
+        )
+        BATTERY_TAG_MAP.clear()
+        BATTERY_TAG_MAP.putAll(
+            mapOf(
+                getString(R.string.tag_battery_pct) to getString(R.string.insert_tag_battery_pct),
+                getString(R.string.tag_battery_status) to getString(R.string.insert_tag_battery_status),
+                getString(R.string.tag_battery_plugged) to getString(R.string.insert_tag_battery_plugged),
+                getString(R.string.tag_battery_info) to getString(R.string.insert_tag_battery_info),
+                getString(R.string.tag_battery_info_simple) to getString(R.string.insert_tag_battery_info_simple),
+            )
+        )
+        NETWORK_TAG_MAP.clear()
+        NETWORK_TAG_MAP.putAll(
+            mapOf(
+                getString(R.string.tag_ipv4) to getString(R.string.insert_tag_ipv4),
+                getString(R.string.tag_ipv6) to getString(R.string.insert_tag_ipv6),
+                getString(R.string.tag_ip_list) to getString(R.string.insert_tag_ip_list),
+                getString(R.string.tag_net_type) to getString(R.string.insert_tag_net_type),
+            )
+        )
+
+        CALL_TYPE_MAP.clear()
+        CALL_TYPE_MAP.putAll(
+            mapOf(
+                //"0" to getString(R.string.unknown_call),
+                "1" to getString(R.string.incoming_call_ended),
+                "2" to getString(R.string.outgoing_call_ended),
+                "3" to getString(R.string.missed_call),
+                "4" to getString(R.string.incoming_call_received),
+                "5" to getString(R.string.incoming_call_answered),
+                "6" to getString(R.string.outgoing_call_started),
+            )
+        )
+
+        FILED_MAP.clear()
+        FILED_MAP.putAll(
+            mapOf(
+                "transpond_all" to getString(R.string.rule_transpond_all),
+                "phone_num" to getString(R.string.rule_phone_num),
+                "msg_content" to getString(R.string.rule_msg_content),
+                "multi_match" to getString(R.string.rule_multi_match),
+                "package_name" to getString(R.string.rule_package_name),
+                "inform_content" to getString(R.string.rule_inform_content),
+                "call_type" to getString(R.string.rule_call_type),
+                "uid" to getString(R.string.rule_uid),
+            )
+        )
+
+        CHECK_MAP.clear()
+        CHECK_MAP.putAll(
+            mapOf(
+                "is" to getString(R.string.rule_is),
+                "notis" to getString(R.string.rule_notis),
+                "contain" to getString(R.string.rule_contain),
+                "startwith" to getString(R.string.rule_startwith),
+                "endwith" to getString(R.string.rule_endwith),
+                "notcontain" to getString(R.string.rule_notcontain),
+                "regex" to getString(R.string.rule_regex),
+            )
+        )
+
+        SIM_SLOT_MAP.clear()
+        SIM_SLOT_MAP.putAll(
+            mapOf(
+                "ALL" to getString(R.string.rule_any),
+                "SIM1" to "SIM1",
+                "SIM2" to "SIM2",
+            )
+        )
+
+        FORWARD_STATUS_MAP.clear()
+        FORWARD_STATUS_MAP.putAll(
+            mapOf(
+                0 to getString(R.string.failed),
+                1 to getString(R.string.processing),
+                2 to getString(R.string.success),
+            )
+        )
+
+        BARK_LEVEL_MAP.clear()
+        BARK_LEVEL_MAP.putAll(
+            mapOf(
+                "active" to getString(R.string.bark_level_active),
+                "timeSensitive" to getString(R.string.bark_level_timeSensitive),
+                "passive" to getString(R.string.bark_level_passive)
+            )
+        )
+
+        BARK_ENCRYPTION_ALGORITHM_MAP.clear()
+        BARK_ENCRYPTION_ALGORITHM_MAP.putAll(
+            mapOf(
+                "none" to getString(R.string.bark_encryption_algorithm_none),
+                "AES128/CBC/PKCS7Padding" to "AES128/CBC/PKCS7Padding",
+                "AES128/ECB/PKCS7Padding" to "AES128/ECB/PKCS7Padding",
+                "AES192/CBC/PKCS7Padding" to "AES192/CBC/PKCS7Padding",
+                "AES192/ECB/PKCS7Padding" to "AES192/ECB/PKCS7Padding",
+                "AES256/CBC/PKCS7Padding" to "AES256/CBC/PKCS7Padding",
+                "AES256/ECB/PKCS7Padding" to "AES256/ECB/PKCS7Padding",
+            )
+        )
     }
 
 }

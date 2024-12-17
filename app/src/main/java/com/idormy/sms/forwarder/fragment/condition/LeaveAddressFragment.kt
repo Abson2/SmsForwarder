@@ -2,8 +2,6 @@ package com.idormy.sms.forwarder.fragment.condition
 
 import android.annotation.SuppressLint
 import android.content.Intent
-import android.text.Editable
-import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -14,6 +12,7 @@ import com.idormy.sms.forwarder.core.BaseFragment
 import com.idormy.sms.forwarder.databinding.FragmentTasksConditionLeaveAddressBinding
 import com.idormy.sms.forwarder.entity.condition.LocationSetting
 import com.idormy.sms.forwarder.service.LocationService
+import com.idormy.sms.forwarder.utils.ACTION_START
 import com.idormy.sms.forwarder.utils.HttpServerUtils
 import com.idormy.sms.forwarder.utils.KEY_BACK_DATA_CONDITION
 import com.idormy.sms.forwarder.utils.KEY_BACK_DESCRIPTION_CONDITION
@@ -98,13 +97,11 @@ class LeaveAddressFragment : BaseFragment<FragmentTasksConditionLeaveAddressBind
         binding!!.btnDel.setOnClickListener(this)
         binding!!.btnSave.setOnClickListener(this)
         binding!!.btnCurrentCoordinates.setOnClickListener(this)
-        binding!!.etLongitude.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-            override fun afterTextChanged(s: Editable?) {
+        binding!!.etLongitude.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) {
                 try {
-                    val changedText = s.toString()
-                    if (changedText.isEmpty()) {
+                    val inputText = binding!!.etLongitude.text.toString()
+                    if (inputText.isEmpty()) {
                         binding!!.etLongitude.setText("0")
                         binding!!.etLongitude.setSelection(binding!!.etLongitude.text.length) // 将光标移至文本末尾
                     } else {
@@ -112,17 +109,15 @@ class LeaveAddressFragment : BaseFragment<FragmentTasksConditionLeaveAddressBind
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    Log.e(TAG, "afterTextChanged error:$e")
+                    Log.e(TAG, "etLongitude error:$e")
                 }
             }
-        })
-        binding!!.etLatitude.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-            override fun afterTextChanged(s: Editable?) {
+        }
+        binding!!.etLatitude.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) {
                 try {
-                    val changedText = s.toString()
-                    if (changedText.isEmpty()) {
+                    val inputText = binding!!.etLatitude.text.toString()
+                    if (inputText.isEmpty()) {
                         binding!!.etLatitude.setText("0")
                         binding!!.etLatitude.setSelection(binding!!.etLatitude.text.length) // 将光标移至文本末尾
                     } else {
@@ -130,17 +125,15 @@ class LeaveAddressFragment : BaseFragment<FragmentTasksConditionLeaveAddressBind
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    Log.e(TAG, "afterTextChanged error:$e")
+                    Log.e(TAG, "etLatitude error:$e")
                 }
             }
-        })
-        binding!!.etDistance.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-            override fun afterTextChanged(s: Editable?) {
+        }
+        binding!!.etDistance.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) {
                 try {
-                    val changedText = s.toString()
-                    if (changedText.isEmpty()) {
+                    val inputText = binding!!.etDistance.text.toString()
+                    if (inputText.isEmpty()) {
                         binding!!.etDistance.setText("1")
                         binding!!.etDistance.setSelection(binding!!.etDistance.text.length) // 将光标移至文本末尾
                     } else {
@@ -148,22 +141,20 @@ class LeaveAddressFragment : BaseFragment<FragmentTasksConditionLeaveAddressBind
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    Log.e(TAG, "afterTextChanged error:$e")
+                    Log.e(TAG, "etDistance error:$e")
                 }
             }
-        })
-        binding!!.etAddress.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-            override fun afterTextChanged(s: Editable?) {
+        }
+        binding!!.etAddress.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) {
                 try {
                     checkSetting(true)
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    Log.e(TAG, "afterTextChanged error:$e")
+                    Log.e(TAG, "etAddress error:$e")
                 }
             }
-        })
+        }
     }
 
     @SingleClick
@@ -172,12 +163,19 @@ class LeaveAddressFragment : BaseFragment<FragmentTasksConditionLeaveAddressBind
             when (v.id) {
                 R.id.btn_current_coordinates -> {
                     if (!App.LocationClient.isStarted()) {
-                        MaterialDialog.Builder(requireContext()).iconRes(R.drawable.auto_task_icon_location).title(R.string.enable_location).content(R.string.enable_location_dialog).cancelable(false).positiveText(R.string.lab_yes).negativeText(R.string.lab_no).onPositive { _: MaterialDialog?, _: DialogAction? ->
-                            SettingUtils.enableLocation = true
-                            val serviceIntent = Intent(requireContext(), LocationService::class.java)
-                            serviceIntent.action = "START"
-                            requireContext().startService(serviceIntent)
-                        }.show()
+                        MaterialDialog.Builder(requireContext())
+                            .iconRes(R.drawable.auto_task_icon_location)
+                            .title(R.string.enable_location)
+                            .content(R.string.enable_location_dialog)
+                            .cancelable(false)
+                            .positiveText(R.string.lab_yes)
+                            .negativeText(R.string.lab_no)
+                            .onPositive { _: MaterialDialog?, _: DialogAction? ->
+                                SettingUtils.enableLocation = true
+                                val serviceIntent = Intent(requireContext(), LocationService::class.java)
+                                serviceIntent.action = ACTION_START
+                                requireContext().startService(serviceIntent)
+                            }.show()
                         return
                     }
 

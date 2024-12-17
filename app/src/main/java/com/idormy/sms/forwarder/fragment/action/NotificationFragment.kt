@@ -5,7 +5,8 @@ import android.content.Intent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.*
+import android.widget.AdapterView
+import android.widget.CompoundButton
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -25,7 +26,23 @@ import com.idormy.sms.forwarder.database.entity.Sender
 import com.idormy.sms.forwarder.databinding.FragmentTasksActionNotificationBinding
 import com.idormy.sms.forwarder.entity.MsgInfo
 import com.idormy.sms.forwarder.entity.TaskSetting
-import com.idormy.sms.forwarder.utils.*
+import com.idormy.sms.forwarder.utils.CHECK_IS
+import com.idormy.sms.forwarder.utils.CHECK_SIM_SLOT_ALL
+import com.idormy.sms.forwarder.utils.CommonUtils
+import com.idormy.sms.forwarder.utils.DataProvider
+import com.idormy.sms.forwarder.utils.FILED_TRANSPOND_ALL
+import com.idormy.sms.forwarder.utils.KEY_BACK_DATA_ACTION
+import com.idormy.sms.forwarder.utils.KEY_BACK_DESCRIPTION_ACTION
+import com.idormy.sms.forwarder.utils.KEY_EVENT_DATA_ACTION
+import com.idormy.sms.forwarder.utils.Log
+import com.idormy.sms.forwarder.utils.SENDER_LOGIC_ALL
+import com.idormy.sms.forwarder.utils.SENDER_LOGIC_UNTIL_FAIL
+import com.idormy.sms.forwarder.utils.SENDER_LOGIC_UNTIL_SUCCESS
+import com.idormy.sms.forwarder.utils.STATUS_OFF
+import com.idormy.sms.forwarder.utils.STATUS_ON
+import com.idormy.sms.forwarder.utils.TASK_ACTION_NOTIFICATION
+import com.idormy.sms.forwarder.utils.TaskWorker
+import com.idormy.sms.forwarder.utils.XToastUtils
 import com.idormy.sms.forwarder.workers.ActionWorker
 import com.xuexiang.xaop.annotation.SingleClick
 import com.xuexiang.xpage.annotation.Page
@@ -41,8 +58,7 @@ import io.reactivex.SingleObserver
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.Disposable
 import io.reactivex.schedulers.Schedulers
-import kotlinx.coroutines.*
-import java.util.*
+import java.util.Date
 
 @Page(name = "Notification")
 @Suppress("PrivatePropertyName", "DEPRECATION")
@@ -139,6 +155,9 @@ class NotificationFragment : BaseFragment<FragmentTasksActionNotificationBinding
 
         //初始化发送通道下拉框
         initSenderSpinner()
+
+        //创建标签按钮
+        CommonUtils.createTagButtons(requireContext(), binding!!.glSmsTemplate, binding!!.etSmsTemplate, ruleType)
     }
 
     override fun onDestroyView() {
@@ -148,15 +167,6 @@ class NotificationFragment : BaseFragment<FragmentTasksActionNotificationBinding
 
     override fun initListeners() {
         binding!!.btnSilentPeriod.setOnClickListener(this)
-        binding!!.btInsertSender.setOnClickListener(this)
-        binding!!.btInsertContent.setOnClickListener(this)
-        binding!!.btInsertSenderApp.setOnClickListener(this)
-        binding!!.btInsertUid.setOnClickListener(this)
-        binding!!.btInsertTitleApp.setOnClickListener(this)
-        binding!!.btInsertContentApp.setOnClickListener(this)
-        binding!!.btInsertExtra.setOnClickListener(this)
-        binding!!.btInsertTime.setOnClickListener(this)
-        binding!!.btInsertDeviceName.setOnClickListener(this)
         binding!!.btnTest.setOnClickListener(this)
         binding!!.btnDel.setOnClickListener(this)
         binding!!.btnSave.setOnClickListener(this)
@@ -196,7 +206,6 @@ class NotificationFragment : BaseFragment<FragmentTasksActionNotificationBinding
     @SingleClick
     override fun onClick(v: View) {
         try {
-            val etSmsTemplate: EditText = binding!!.etSmsTemplate
             when (v.id) {
                 R.id.btn_silent_period -> {
                     OptionsPickerBuilder(context, OnOptionsSelectListener { _: View?, options1: Int, options2: Int, _: Int ->
@@ -212,51 +221,6 @@ class NotificationFragment : BaseFragment<FragmentTasksActionNotificationBinding
                     }
                 }
 
-                R.id.bt_insert_sender -> {
-                    CommonUtils.insertOrReplaceText2Cursor(etSmsTemplate, getString(R.string.tag_from))
-                    return
-                }
-
-                R.id.bt_insert_content -> {
-                    CommonUtils.insertOrReplaceText2Cursor(etSmsTemplate, getString(R.string.tag_sms))
-                    return
-                }
-
-                R.id.bt_insert_sender_app -> {
-                    CommonUtils.insertOrReplaceText2Cursor(etSmsTemplate, getString(R.string.tag_package_name))
-                    return
-                }
-
-                R.id.bt_insert_uid -> {
-                    CommonUtils.insertOrReplaceText2Cursor(etSmsTemplate, getString(R.string.tag_uid))
-                    return
-                }
-
-                R.id.bt_insert_title_app -> {
-                    CommonUtils.insertOrReplaceText2Cursor(etSmsTemplate, getString(R.string.tag_title))
-                    return
-                }
-
-                R.id.bt_insert_content_app -> {
-                    CommonUtils.insertOrReplaceText2Cursor(etSmsTemplate, getString(R.string.tag_msg))
-                    return
-                }
-
-                R.id.bt_insert_extra -> {
-                    CommonUtils.insertOrReplaceText2Cursor(etSmsTemplate, getString(R.string.tag_card_slot))
-                    return
-                }
-
-                R.id.bt_insert_time -> {
-                    CommonUtils.insertOrReplaceText2Cursor(etSmsTemplate, getString(R.string.tag_receive_time))
-                    return
-                }
-
-                R.id.bt_insert_device_name -> {
-                    CommonUtils.insertOrReplaceText2Cursor(etSmsTemplate, getString(R.string.tag_device_name))
-                    return
-                }
-
                 R.id.btn_test -> {
                     mCountDownHelper?.start()
                     try {
@@ -265,7 +229,7 @@ class NotificationFragment : BaseFragment<FragmentTasksActionNotificationBinding
                         val taskAction = TaskSetting(TASK_ACTION_NOTIFICATION, getString(R.string.task_notification), description, Gson().toJson(settingVo), requestCode)
                         val taskActionsJson = Gson().toJson(arrayListOf(taskAction))
                         val msgInfo = MsgInfo("task", getString(R.string.task_notification), description, Date(), getString(R.string.task_notification))
-                        val actionData = Data.Builder().putLong(TaskWorker.taskId, 0).putString(TaskWorker.taskActions, taskActionsJson).putString(TaskWorker.msgInfo, Gson().toJson(msgInfo)).build()
+                        val actionData = Data.Builder().putLong(TaskWorker.TASK_ID, 0).putString(TaskWorker.TASK_ACTIONS, taskActionsJson).putString(TaskWorker.MSG_INFO, Gson().toJson(msgInfo)).build()
                         val actionRequest = OneTimeWorkRequestBuilder<ActionWorker>().setInputData(actionData).build()
                         WorkManager.getInstance().enqueue(actionRequest)
                     } catch (e: Exception) {

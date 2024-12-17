@@ -143,7 +143,7 @@ class RuleFragment : BaseFragment<FragmentTasksActionRuleBinding?>(), View.OnCli
                         val taskAction = TaskSetting(TASK_ACTION_RULE, getString(R.string.task_rule), settingVo.description, Gson().toJson(settingVo), requestCode)
                         val taskActionsJson = Gson().toJson(arrayListOf(taskAction))
                         val msgInfo = MsgInfo("task", getString(R.string.task_rule), settingVo.description, Date(), getString(R.string.task_rule))
-                        val actionData = Data.Builder().putLong(TaskWorker.taskId, 0).putString(TaskWorker.taskActions, taskActionsJson).putString(TaskWorker.msgInfo, Gson().toJson(msgInfo)).build()
+                        val actionData = Data.Builder().putLong(TaskWorker.TASK_ID, 0).putString(TaskWorker.TASK_ACTIONS, taskActionsJson).putString(TaskWorker.MSG_INFO, Gson().toJson(msgInfo)).build()
                         val actionRequest = OneTimeWorkRequestBuilder<ActionWorker>().setInputData(actionData).build()
                         WorkManager.getInstance().enqueue(actionRequest)
                     } catch (e: Exception) {
@@ -256,7 +256,8 @@ class RuleFragment : BaseFragment<FragmentTasksActionRuleBinding?>(), View.OnCli
                 ruleSpinnerList.clear()
                 ruleListAll = ruleList as MutableList<Rule>
                 for (rule in ruleList) {
-                    val name = if (rule.name.length > 20) rule.name.substring(0, 19) else rule.name
+                    var name = rule.getName()
+                    if (name.length > 20) name = name.substring(0, 19)
                     val icon = when (rule.type) {
                         "sms" -> R.drawable.auto_task_icon_sms
                         "call" -> R.drawable.auto_task_icon_incall

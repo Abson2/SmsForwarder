@@ -14,6 +14,7 @@ import android.provider.Settings
 import android.telephony.SmsManager
 import android.telephony.SubscriptionInfo
 import android.telephony.SubscriptionManager
+import android.telephony.TelephonyManager
 import android.text.TextUtils
 import androidx.annotation.RequiresPermission
 import androidx.core.app.ActivityCompat
@@ -29,7 +30,7 @@ import com.xuexiang.xutil.app.IntentUtils
 import com.xuexiang.xutil.data.DateUtils
 import com.xuexiang.xutil.resource.ResUtils.getString
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Locale
 
 @Suppress("DEPRECATION")
 class PhoneUtils private constructor() {
@@ -37,13 +38,21 @@ class PhoneUtils private constructor() {
     companion object {
         const val TAG = "PhoneUtils"
 
+        /** 获取 sim 卡槽数量，注意不是 sim 卡的数量。*/
+        fun getSimSlotCount() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+            (App.context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager).activeModemCount
+        else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+            (App.context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager).phoneCount
+        else
+            -1
+
         //获取多卡信息
         @SuppressLint("Range")
         fun getSimMultiInfo(): MutableMap<Int, SimInfo> {
             val infoList = HashMap<Int, SimInfo>()
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
-                    println("1.版本超过5.1，调用系统方法")
+                    Log.d(TAG, "1.版本超过5.1，调用系统方法")
                     val mSubscriptionManager = XUtil.getContext().getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
                     ActivityCompat.checkSelfPermission(
                         XUtil.getContext(), permission.READ_PHONE_STATE
@@ -53,18 +62,18 @@ class PhoneUtils private constructor() {
                         //1.1.1 有使用的卡，就遍历所有卡
                         for (subscriptionInfo in activeSubscriptionInfoList) {
                             val simInfo = SimInfo()
-                            simInfo.mCarrierName = subscriptionInfo.carrierName.toString()
-                            simInfo.mIccId = subscriptionInfo.iccId.toString()
+                            simInfo.mCarrierName = subscriptionInfo.carrierName?.toString()
+                            simInfo.mIccId = subscriptionInfo.iccId?.toString()
                             simInfo.mSimSlotIndex = subscriptionInfo.simSlotIndex
-                            simInfo.mNumber = subscriptionInfo.number.toString()
-                            simInfo.mCountryIso = subscriptionInfo.countryIso.toString()
+                            simInfo.mNumber = subscriptionInfo.number?.toString()
+                            simInfo.mCountryIso = subscriptionInfo.countryIso?.toString()
                             simInfo.mSubscriptionId = subscriptionInfo.subscriptionId
-                            println(simInfo.toString())
+                            Log.d(TAG, simInfo.toString())
                             infoList[simInfo.mSimSlotIndex] = simInfo
                         }
                     }
                 } else {
-                    println("2.版本低于5.1的系统，首先调用数据库，看能不能访问到")
+                    Log.d(TAG, "2.版本低于5.1的系统，首先调用数据库，看能不能访问到")
                     val uri = Uri.parse("content://telephony/siminfo") //访问raw_contacts表
                     val resolver: ContentResolver = XUtil.getContext().contentResolver
                     val cursor = resolver.query(
@@ -81,7 +90,7 @@ class PhoneUtils private constructor() {
                             simInfo.mNumber = cursor.getString(cursor.getColumnIndex("number"))
                             simInfo.mCountryIso = cursor.getString(cursor.getColumnIndex("mcc"))
                             //val id = cursor.getString(cursor.getColumnIndex("_id"))
-                            println(simInfo.toString())
+                            Log.d(TAG, simInfo.toString())
                             infoList[simInfo.mSimSlotIndex] = simInfo
                         } while (cursor.moveToNext())
                         cursor.close()
@@ -93,7 +102,7 @@ class PhoneUtils private constructor() {
             }
             //仍然获取不到/只获取到一个->取出备注
             /*if (infoList.isEmpty() || infoList.size == 1) {
-                println("3.直接取出备注框的数据作为信息")
+                Log.d(TAG, "3.直接取出备注框的数据作为信息")
                 //为空，两个卡都没有获取到信息
                 if (infoList.isEmpty()) {
                     //卡1备注信息不为空
@@ -142,7 +151,7 @@ class PhoneUtils private constructor() {
                     }
                 }
             }*/
-            Log.e(TAG, infoList.toString())
+            Log.i(TAG, infoList.toString())
             return infoList
         }
 
@@ -169,10 +178,21 @@ class PhoneUtils private constructor() {
         @SuppressLint("SoonBlockedPrivateApi", "DiscouragedPrivateApi")
         @RequiresPermission(permission.SEND_SMS)
         fun sendSms(subId: Int, mobileList: String, message: String): String? {
+            if (TextUtils.isEmpty(mobileList) || TextUtils.isEmpty(message)) {
+                Log.e(TAG, "mobileList or message is empty!")
+                return "mobileList or message is empty!"
+            }
+
             val mobiles = mobileList.replace("；", ";").replace("，", ";").replace(",", ";")
             Log.d(TAG, "subId = $subId, mobiles = $mobiles, message = $message")
             val mobileArray = mobiles.split(";".toRegex()).toTypedArray()
             for (mobile in mobileArray) {
+                Log.d(TAG, "mobile = $mobile")
+                if (!isValidPhoneNumber(mobile)) {
+                    Log.e(TAG, "mobile ($mobile) is invalid!")
+                    continue
+                }
+
                 try {
                     val sendFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) PendingIntent.FLAG_IMMUTABLE else PendingIntent.FLAG_ONE_SHOT
                     val sendPI = PendingIntent.getBroadcast(XUtil.getContext(), 0, Intent(), sendFlags)
@@ -557,6 +577,12 @@ class PhoneUtils private constructor() {
                 }
                 return simSlot
             }
+        }
+
+        //判断是否是手机号码(宽松判断)
+        private fun isValidPhoneNumber(phoneNumber: String): Boolean {
+            val regex = Regex("^\\+?\\d{3,20}$")
+            return regex.matches(phoneNumber)
         }
 
     }

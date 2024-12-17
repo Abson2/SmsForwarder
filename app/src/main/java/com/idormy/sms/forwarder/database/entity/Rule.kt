@@ -2,6 +2,11 @@ package com.idormy.sms.forwarder.database.entity
 
 import android.os.Parcelable
 import androidx.room.*
+import com.idormy.sms.forwarder.App
+import com.idormy.sms.forwarder.App.Companion.CALL_TYPE_MAP
+import com.idormy.sms.forwarder.App.Companion.CHECK_MAP
+import com.idormy.sms.forwarder.App.Companion.FILED_MAP
+import com.idormy.sms.forwarder.App.Companion.SIM_SLOT_MAP
 import com.idormy.sms.forwarder.R
 import com.idormy.sms.forwarder.database.ext.ConvertersSenderList
 import com.idormy.sms.forwarder.entity.MsgInfo
@@ -49,103 +54,85 @@ data class Rule(
     //免打扰(禁用转发)时间段
     @ColumnInfo(name = "silent_period_start", defaultValue = "0") var silentPeriodStart: Int = 0,
     @ColumnInfo(name = "silent_period_end", defaultValue = "0") var silentPeriodEnd: Int = 0,
+    @ColumnInfo(name = "silent_day_of_week", defaultValue = "") var silentDayOfWeek: String = "",
 ) : Parcelable {
 
     companion object {
         val TAG: String = Rule::class.java.simpleName
 
-        //通话类型：1.来电挂机 2.去电挂机 3.未接来电 4.来电提醒 5.来电接通 6.去电拨出
-        val CALL_TYPE_MAP = mapOf(
-            //"0" to getString(R.string.unknown_call),
-            "1" to getString(R.string.incoming_call_ended),
-            "2" to getString(R.string.outgoing_call_ended),
-            "3" to getString(R.string.missed_call),
-            "4" to getString(R.string.incoming_call_received),
-            "5" to getString(R.string.incoming_call_answered),
-            "6" to getString(R.string.outgoing_call_started),
-        )
-        val FILED_MAP = object : HashMap<String, String>() {
-            init {
-                put("transpond_all", getString(R.string.rule_transpond_all))
-                put("phone_num", getString(R.string.rule_phone_num))
-                put("msg_content", getString(R.string.rule_msg_content))
-                put("multi_match", getString(R.string.rule_multi_match))
-                put("package_name", getString(R.string.rule_package_name))
-                put("inform_content", getString(R.string.rule_inform_content))
-                put("call_type", getString(R.string.rule_call_type))
-                put("uid", getString(R.string.rule_uid))
-            }
-        }
-        val CHECK_MAP = object : HashMap<String, String>() {
-            init {
-                put("is", getString(R.string.rule_is))
-                put("notis", getString(R.string.rule_notis))
-                put("contain", getString(R.string.rule_contain))
-                put("startwith", getString(R.string.rule_startwith))
-                put("endwith", getString(R.string.rule_endwith))
-                put("notcontain", getString(R.string.rule_notcontain))
-                put("regex", getString(R.string.rule_regex))
-            }
-        }
-        val SIM_SLOT_MAP = object : HashMap<String, String>() {
-            init {
-                put("ALL", getString(R.string.rule_all))
-                put("SIM1", "SIM1")
-                put("SIM2", "SIM2")
-            }
-        }
-
-        fun getRuleMatch(filed: String?, check: String?, value: String?, simSlot: String?): Any {
+        fun getRuleMatch(type: String?, filed: String?, check: String?, value: String?, simSlot: String?, senderList: List<Sender>? = null): String {
+            val blank = if (App.isNeedSpaceBetweenWords) " " else ""
             val sb = StringBuilder()
-            sb.append(SIM_SLOT_MAP[simSlot]).append(getString(R.string.rule_card))
+            if (type != "app") sb.append(SIM_SLOT_MAP[simSlot]).append(blank).append(getString(R.string.rule_card)).append(blank)
             when (filed) {
-                null, FILED_TRANSPOND_ALL -> {
-                    sb.append(getString(R.string.rule_all_fw_to))
-                }
+                null, FILED_TRANSPOND_ALL -> sb.append(getString(R.string.rule_all_fw_to))
+                FILED_CALL_TYPE -> sb.append(getString(R.string.rule_when))
+                    .append(blank)
+                    .append(FILED_MAP[filed])
+                    .append(blank)
+                    .append(CHECK_MAP[check])
+                    .append(blank)
+                    .append(CALL_TYPE_MAP[value])
+                    .append(blank)
+                    .append(getString(R.string.rule_fw_to))
 
-                FILED_CALL_TYPE -> {
-                    sb.append(getString(R.string.rule_when)).append(FILED_MAP[filed]).append(CHECK_MAP[check]).append(CALL_TYPE_MAP[value]).append(getString(R.string.rule_fw_to))
-                }
-
-                else -> {
-                    sb.append(getString(R.string.rule_when)).append(FILED_MAP[filed]).append(CHECK_MAP[check]).append(value).append(getString(R.string.rule_fw_to))
-                }
+                else -> sb.append(getString(R.string.rule_when))
+                    .append(blank)
+                    .append(FILED_MAP[filed])
+                    .append(blank)
+                    .append(CHECK_MAP[check])
+                    .append(blank)
+                    .append(value)
+                    .append(blank)
+                    .append(getString(R.string.rule_fw_to))
+            }
+            if (!senderList.isNullOrEmpty()) {
+                sb.append(blank).append(senderList.joinToString(",") { it.name })
             }
             return sb.toString()
         }
 
     }
 
-    val name: String
+    val description: String
         get() {
+            val blank = if (App.isNeedSpaceBetweenWords) " " else ""
+            val card = SIM_SLOT_MAP[simSlot].toString() + blank + getString(R.string.rule_card) + blank
             val sb = StringBuilder()
-            if (type == "call" || type == "sms") sb.append(SIM_SLOT_MAP[simSlot].toString()).append(getString(R.string.rule_card))
-            when (filed) {
-                FILED_TRANSPOND_ALL -> sb.append(getString(R.string.rule_all_fw_to))
-                FILED_CALL_TYPE -> sb.append(getString(R.string.rule_when) + FILED_MAP[filed] + CHECK_MAP[check] + CALL_TYPE_MAP[value] + getString(R.string.rule_fw_to))
-                else -> sb.append(getString(R.string.rule_when) + FILED_MAP[filed] + CHECK_MAP[check] + value + getString(R.string.rule_fw_to))
+            when (type) {
+                "app" -> sb.append(getString(R.string.task_app_when))
+                "call" -> sb.append(String.format(getString(R.string.task_call_when), card))
+                "sms" -> sb.append(String.format(getString(R.string.task_sms_when), card))
             }
-            sb.append(senderList.joinToString(",") { it.name })
+            sb.append(blank)
+            when (filed) {
+                FILED_TRANSPOND_ALL -> sb.append("")
+                FILED_CALL_TYPE -> sb.append(getString(R.string.rule_when))
+                    .append(blank)
+                    .append(FILED_MAP[filed])
+                    .append(blank)
+                    .append(CHECK_MAP[check])
+                    .append(blank)
+                    .append(CALL_TYPE_MAP[value])
+
+                else -> sb.append(getString(R.string.rule_when))
+                    .append(blank)
+                    .append(FILED_MAP[filed])
+                    .append(blank)
+                    .append(CHECK_MAP[check])
+                    .append(blank)
+                    .append(value)
+            }
             return sb.toString()
         }
 
-    val ruleMatch: String
-        get() {
-            val simStr = if ("app" == type) "" else SIM_SLOT_MAP[simSlot].toString() + getString(R.string.rule_card)
-            return when (filed) {
-                FILED_TRANSPOND_ALL -> {
-                    simStr + getString(R.string.rule_all_fw_to)
-                }
-
-                FILED_CALL_TYPE -> {
-                    simStr + getString(R.string.rule_when) + FILED_MAP[filed] + CHECK_MAP[check] + CALL_TYPE_MAP[value] + getString(R.string.rule_fw_to)
-                }
-
-                else -> {
-                    simStr + getString(R.string.rule_when) + FILED_MAP[filed] + CHECK_MAP[check] + value + getString(R.string.rule_fw_to)
-                }
-            }
+    fun getName(appendSenderList: Boolean = true): String {
+        return if (appendSenderList) {
+            getRuleMatch(type, filed, check, value, simSlot, senderList)
+        } else {
+            getRuleMatch(type, filed, check, value, simSlot, null)
         }
+    }
 
     val statusChecked: Boolean
         get() = status != STATUS_OFF
@@ -228,47 +215,49 @@ data class Rule(
 
     //内容分支
     private fun checkValue(msgValue: String?): Boolean {
-        var checked = false
-        when (this.check) {
-            CHECK_IS -> checked = this.value == msgValue
-            CHECK_NOT_IS -> checked = this.value != msgValue
-            CHECK_CONTAIN -> if (msgValue != null) {
-                checked = msgValue.contains(this.value)
-            }
+        if (msgValue == null) return false
 
-            CHECK_NOT_CONTAIN -> if (msgValue != null) {
-                checked = !msgValue.contains(this.value)
-            }
-
-            CHECK_START_WITH -> if (msgValue != null) {
-                checked = msgValue.startsWith(this.value)
-            }
-
-            CHECK_END_WITH -> if (msgValue != null) {
-                checked = msgValue.endsWith(this.value)
-            }
-
-            CHECK_REGEX -> if (msgValue != null) {
-                try {
-                    //checked = Pattern.matches(this.value, msgValue);
-                    val pattern = Pattern.compile(this.value, Pattern.CASE_INSENSITIVE)
+        fun evaluateCondition(condition: String): Boolean {
+            return when (check) {
+                CHECK_IS -> msgValue == condition
+                CHECK_NOT_IS -> msgValue != condition
+                CHECK_CONTAIN -> msgValue.contains(condition)
+                CHECK_NOT_CONTAIN -> !msgValue.contains(condition)
+                CHECK_START_WITH -> msgValue.startsWith(condition)
+                CHECK_END_WITH -> msgValue.endsWith(condition)
+                CHECK_REGEX -> try {
+                    val pattern = Pattern.compile(condition, Pattern.CASE_INSENSITIVE)
                     val matcher = pattern.matcher(msgValue)
-                    while (matcher.find()) {
-                        checked = true
-                        break
-                    }
+                    matcher.find()
                 } catch (e: PatternSyntaxException) {
-                    Log.d(TAG, "PatternSyntaxException: ")
-                    Log.d(TAG, "Description: " + e.description)
-                    Log.d(TAG, "Index: " + e.index)
-                    Log.d(TAG, "Message: " + e.message)
-                    Log.d(TAG, "Pattern: " + e.pattern)
+                    Log.i(TAG, "PatternSyntaxException: ${e.description}, Index: ${e.index}, Message: ${e.message}, Pattern: ${e.pattern}")
+                    false
+                }
+
+                else -> false
+            }
+        }
+
+        fun parseAndEvaluate(expression: String): Boolean {
+            // Split by "||" and evaluate each segment joined by "&&"
+            val orGroups = expression.split("||")
+            return orGroups.any { orGroup ->
+                val andGroups = orGroup.split("&&")
+                andGroups.all { andGroup ->
+                    val trimmedCondition = andGroup.trim()
+                    evaluateCondition(trimmedCondition)
                 }
             }
-
-            else -> {}
         }
-        Log.i(TAG, "checkValue " + msgValue + " " + this.check + " " + this.value + " checked:" + checked)
+
+        val checked = if (value.contains("&&") || value.contains("||")) {
+            parseAndEvaluate(value)
+        } else {
+            evaluateCondition(value)
+        }
+
+        Log.i(TAG, "checkValue $msgValue $check $value checked:$checked")
         return checked
     }
+
 }

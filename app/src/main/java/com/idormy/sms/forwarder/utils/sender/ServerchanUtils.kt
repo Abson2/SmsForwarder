@@ -9,6 +9,7 @@ import com.idormy.sms.forwarder.entity.setting.ServerchanSetting
 import com.idormy.sms.forwarder.utils.Log
 import com.idormy.sms.forwarder.utils.SendUtils
 import com.idormy.sms.forwarder.utils.SettingUtils
+import com.idormy.sms.forwarder.utils.interceptor.LoggingInterceptor
 import com.xuexiang.xhttp2.XHttp
 import com.xuexiang.xhttp2.callback.SimpleCallBack
 import com.xuexiang.xhttp2.exception.ApiException
@@ -27,9 +28,9 @@ class ServerchanUtils {
             msgId: Long = 0L
         ) {
             val title: String = if (rule != null) {
-                msgInfo.getTitleForSend(setting.titleTemplate.toString(), rule.regexReplace)
+                msgInfo.getTitleForSend(setting.titleTemplate, rule.regexReplace)
             } else {
-                msgInfo.getTitleForSend(setting.titleTemplate.toString())
+                msgInfo.getTitleForSend(setting.titleTemplate)
             }
             val content: String = if (rule != null) {
                 msgInfo.getContentForSend(rule.smsTemplate, rule.regexReplace)
@@ -37,7 +38,14 @@ class ServerchanUtils {
                 msgInfo.getContentForSend(SettingUtils.smsTemplate)
             }
 
-            val requestUrl: String = String.format("https://sctapi.ftqq.com/%s.send", setting.sendKey) //推送地址
+            // 兼容Server酱³Sendkey，使用正则表达式提取数字部分
+            val matchResult = Regex("^sctp(\\d+)t", RegexOption.IGNORE_CASE).find(setting.sendKey)
+            val requestUrl = if (matchResult != null && matchResult.groups[1] != null) {
+                "https://${matchResult.groups[1]?.value}.push.ft07.com/send/${setting.sendKey}.send"
+            } else {
+                String.format("https://sctapi.ftqq.com/%s.send", setting.sendKey) // 默认推送地址
+            }
+            
             Log.i(TAG, "requestUrl:$requestUrl")
 
             val request = XHttp.post(requestUrl)

@@ -6,18 +6,29 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Rect
+import android.os.Build
 import android.text.SpannableString
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.TextUtils
 import android.text.method.LinkMovementMethod
 import android.text.style.ClickableSpan
+import android.util.TypedValue
 import android.view.View
 import android.widget.EditText
+import android.widget.GridLayout
+import android.widget.TextView
 import androidx.annotation.ColorInt
 import androidx.core.app.NotificationManagerCompat
 import androidx.fragment.app.Fragment
 import com.idormy.sms.forwarder.App
+import com.idormy.sms.forwarder.App.Companion.APP_TAG_MAP
+import com.idormy.sms.forwarder.App.Companion.BATTERY_TAG_MAP
+import com.idormy.sms.forwarder.App.Companion.CALL_TAG_MAP
+import com.idormy.sms.forwarder.App.Companion.COMMON_TAG_MAP
+import com.idormy.sms.forwarder.App.Companion.LOCATION_TAG_MAP
+import com.idormy.sms.forwarder.App.Companion.NETWORK_TAG_MAP
+import com.idormy.sms.forwarder.App.Companion.SMS_TAG_MAP
 import com.idormy.sms.forwarder.R
 import com.idormy.sms.forwarder.core.webview.AgentWebActivity
 import com.idormy.sms.forwarder.core.webview.AgentWebFragment
@@ -35,6 +46,8 @@ import com.xuexiang.xui.widget.dialog.materialdialog.MaterialDialog.SingleButton
 import com.xuexiang.xui.widget.imageview.preview.PreviewBuilder
 import com.xuexiang.xutil.XUtil
 import com.xuexiang.xutil.common.StringUtils
+import com.xuexiang.xutil.resource.ResUtils.getColor
+import com.xuexiang.xutil.resource.ResUtils.getDrawable
 import com.xuexiang.xutil.resource.ResUtils.getString
 import java.net.Inet4Address
 import java.net.Inet6Address
@@ -207,32 +220,38 @@ class CommonUtils private constructor() {
             PageOption.to(MarkdownFragment::class.java).putString(MarkdownFragment.KEY_MD_TITLE, title).putString(MarkdownFragment.KEY_MD_URL, url).putBoolean(MarkdownFragment.KEY_IS_IMMERSIVE, isImmersive).open(fragment!!)
         }
 
-        //是否合法的url
-        fun checkUrl(urls: String?): Boolean {
-            return checkUrl(urls, false)
+        //检查自定义模板中的标签是否合法
+        fun checkTemplateTag(template: String): String {
+            val tagRegex = "\\{\\{[^#]+###([^=]+)===(.*?)\\}\\}".toRegex()
+            tagRegex.findAll(template).forEach {
+                try {
+                    it.groupValues[1].toRegex()
+                    //TODO:怎么测试反向引用是否正确？
+                    /*val replacement = it.groupValues[2]
+                    if (replacement.isNotEmpty()) {
+                        "pppscn/SmsForwarder".replace(regex, replacement)
+                    }*/
+                } catch (e: Exception) {
+                    return String.format(getString(R.string.invalid_tag), it.value, e.message)
+                }
+            }
+            return ""
         }
 
         //是否合法的url
-        fun checkUrl(urls: String?, emptyResult: Boolean): Boolean {
-            if (TextUtils.isEmpty(urls)) return emptyResult
-            val regex = """^(https?://)?(?:www\.)?(?:\[[a-fA-F0-9:]+\]|[a-zA-Z0-9-]+\.?)(?::\d{1,5})?(?:[-a-zA-Z0-9()@:%_\+.~#?&/=\[\]]*)?${'$'}"""
-            val pat = Pattern.compile(regex)
-            val mat = pat.matcher(urls?.trim() ?: "")
-            return mat.matches()
+        fun checkUrl(url: String?, emptyResult: Boolean = false): Boolean {
+            if (url.isNullOrEmpty()) return emptyResult
+
+            val regex = Regex("^https?://\\S+\$")
+            return regex.matches(url)
         }
 
         //是否合法的URL Scheme
-        fun checkUrlScheme(urls: String?): Boolean {
-            return checkUrlScheme(urls, false)
-        }
+        fun checkUrlScheme(url: String?, emptyResult: Boolean = false): Boolean {
+            if (url.isNullOrEmpty()) return emptyResult
 
-        //是否合法的URL Scheme
-        fun checkUrlScheme(urls: String?, emptyResult: Boolean): Boolean {
-            if (TextUtils.isEmpty(urls)) return emptyResult
-            val regex = "^[a-zA-Z\\d]+://[-a-zA-Z\\d+&@#/%?=~_|!:,.;\\[\\]]*[-a-zA-Z\\d+&@#/%=~_|\\[\\]]"
-            val pat = Pattern.compile(regex)
-            val mat = pat.matcher(urls?.trim() ?: "")
-            return mat.matches()
+            val regex = Regex("^[a-zA-Z\\d]+://\\S+\$")
+            return regex.matches(url)
         }
 
         //是否合法的IP地址
@@ -262,6 +281,11 @@ class CommonUtils private constructor() {
             if (TextUtils.isEmpty(port)) return false
             val pattenPort = Pattern.compile("^((6[0-4]\\d{3}|65[0-4]\\d{2}|655[0-2]\\d|6553[0-5])|[0-5]?\\d{0,4})$")
             return pattenPort.matcher(port).matches()
+        }
+
+        fun checkEmail(email: String): Boolean {
+            val emailRegex = Regex("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\$")
+            return emailRegex.matches(email)
         }
 
         //是否启用通知监听服务
@@ -327,38 +351,73 @@ class CommonUtils private constructor() {
             XUtil.exitApp()
         }
 
-        /*fun switchLanguage(oldLocale: Locale, newLocale: Locale) {
-            val oldLang = if (TAG_LANG.contains(oldLocale.toString())) oldLocale.toString() else "en"
-            val newLang = if (TAG_LANG.contains(newLocale.toString())) newLocale.toString() else "en"
-            Log.i(App.TAG, "switchLanguage: oldLang=$oldLang, newLang=$newLang")
+        // 动态创建标签按钮并设置点击事件(将标签插入指定输入框)
+        fun createTagButtons(context: Context, gridLayout: GridLayout, editText: EditText, scene: String = "basic", excludeButtons: Array<String> = emptyArray()) {
+            // 将排除的按钮转换成一个集合，方便查找
+            val excludeSet = excludeButtons.toSet()
 
-            //替换自定义模板标签
-            var smsTemplate = SettingUtils.smsTemplate
-            //替换Rule.sms_template中的标签
-            var ruleColumn = "sms_template"
-            //替换Sender.json_setting中的标签
-            var senderColumn = "json_setting"
+            // 清空GridLayout中的所有视图
+            gridLayout.removeAllViews()
 
-            for (i in TAG_LIST.indices) {
-                val oldTag = TAG_LIST[i][oldLang].toString()
-                val newTag = TAG_LIST[i][newLang].toString()
-                if (oldTag == newTag) continue
+            // 根据场景动态拼接所有按钮数据
+            val allButtons = when (scene) {
+                "sms" -> SMS_TAG_MAP
+                "call" -> CALL_TAG_MAP
+                "app" -> APP_TAG_MAP
+                else -> CALL_TAG_MAP + SMS_TAG_MAP + APP_TAG_MAP
+            }.toMutableMap()
 
-                smsTemplate = smsTemplate.replace(oldTag, newTag)
-                ruleColumn = "REPLACE($ruleColumn, '$oldTag', '$newTag')"
-                senderColumn = "REPLACE($senderColumn, '$oldTag', '$newTag')"
+            if (SettingUtils.enableLocation) {
+                allButtons += LOCATION_TAG_MAP
+            }
+            if (scene == "all") {
+                allButtons += BATTERY_TAG_MAP
+                allButtons += NETWORK_TAG_MAP
+            }
+            allButtons += COMMON_TAG_MAP
+
+            val btnBackground = getDrawable(R.drawable.rounded_button)
+            val btnTextColor = getColor(android.R.color.white)
+
+            // 遍历所有按钮数据，过滤掉需要排除的按钮
+            allButtons.forEach { (tag, lable) ->
+                if (excludeSet.isNotEmpty() && excludeSet.contains(tag)) {
+                    return@forEach
+                }
+
+                val button = TextView(context).apply {
+                    text = lable
+                    setOnClickListener {
+                        insertOrReplaceText2Cursor(editText, tag)
+                    }
+
+                    // 设置紧凑样式
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 9f)
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
+                    setPadding(5, 5, 5, 5)
+                    gravity = android.view.Gravity.CENTER
+                    background = btnBackground
+                    setTextColor(btnTextColor)
+
+                    // 布局参数
+                    layoutParams = GridLayout.LayoutParams().apply {
+                        height = GridLayout.LayoutParams.WRAP_CONTENT
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                            width = 0
+                            columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
+                        } else {
+                            width = GridLayout.LayoutParams.WRAP_CONTENT
+                        }
+                        setMargins(8, 8, 8, 8)
+                    }
+                }
+
+                gridLayout.addView(button)
             }
 
-            SettingUtils.smsTemplate = smsTemplate
+        }
 
-            val updateRuleSql = "UPDATE Rule SET sms_template = $ruleColumn WHERE sms_template != ''"
-            Log.d(App.TAG, "updateRuleSql: $updateRuleSql")
-            Core.rule.replaceTags(updateRuleSql)
-
-            val updateSenderSql = "UPDATE Sender SET json_setting = $senderColumn WHERE type NOT IN (4, 5, 6, 7, 8, 14)"
-            Log.d(App.TAG, "updateSenderSql: $updateSenderSql")
-            Core.sender.replaceTags(updateSenderSql)
-        }*/
     }
 
     init {

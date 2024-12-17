@@ -16,6 +16,16 @@ Including active control of the server and client, allowing you to easily and re
 
 Automated Tasks & Quick Commands, effortlessly automate your life, doubling your efficiency, leaving more time to cherish family bonds! (New in v3.3+)
 
+> Notice: Starting from `2022-06-06`, the original `Java edition` code has been archived to the `v2.x` branch and will no longer be updated!
+
+> `v3.x` is compatible with Android 4.4 ~ 13.0.
+
+>  `Join the SmsF Preview Program` (online weekly build updates, be the first to experience new versions & bug fixes).
+
+**Upgrade Instructions:**
+- After joining the SmsF Preview Experience Program, update online (available from `About Software` page, applicable for `v3.3.0_240305+`).
+- Manual download: [https://github.com/pppscn/SmsForwarder/actions/workflows/Weekly_Build.yml](https://github.com/pppscn/SmsForwarder/actions/workflows/Weekly_Build.yml)
+
 --------
 
 ## NOTE
@@ -58,7 +68,7 @@ See more screenshots：https://github.com/pppscn/SmsForwarder/wiki
 
 > ⚠ Gitee: https://gitee.com/pp/SmsForwarder/wikis/pages
 
-![Troubleshooting_Process](pic/Troubleshooting_Process.png "Troubleshooting_Process.png")
+![Troubleshooting_Process](pic/Troubleshooting_Process_en.png "Troubleshooting_Process_en.png")
 
 --------
 
@@ -67,11 +77,10 @@ See more screenshots：https://github.com/pppscn/SmsForwarder/wiki
 + Submit an issue or Pull Request.
 + Join group chat (only Chinese groups/channels available currently)
 
-| Telegram Group |
-| :--:  |
-| ![Telegram Group](pic/tg.png "Telegram Group") |
+|                   Telegram Group                    |
+|:---------------------------------------------------:|
+|   ![Telegram Group](pic/tg.png "Telegram Group")    |
 | [+QBZgnL_fxYM0NjE9](https://t.me/+QBZgnL_fxYM0NjE9) |
-
 
 ## Acknowledgements
 
@@ -88,7 +97,7 @@ See more screenshots：https://github.com/pppscn/SmsForwarder/wiki
 + https://github.com/yanzhenjie/AndServer (HttpServer)
 + https://github.com/jenly1314/Location (Location)
 + https://gitee.com/xuankaicat/kmnkt (socket)
-+ [<img src="https://resources.jetbrains.com/storage/products/company/brand/logos/jb_beam.svg?_ga=2.126618957.1361252949.1638261367-1417196221.1635638144&_gl=1*1pfl3dq*_ga*MTQxNzE5NjIyMS4xNjM1NjM4MTQ0*_ga_V0XZL7QHEB*MTYzODMzMjA4OC43LjAuMTYzODMzMjA5Ny4w" alt="GitHub license" style="width：96px" width="96" />](https://jb.gg/OpenSourceSupport)  (License Certificate for JetBrains All Products Pack)
++ [<img src="https://resources.jetbrains.com/storage/products/company/brand/logos/jetbrains.svg" alt="GitHub license" style="width：159px; height: 32px" width="159" height="32" />](https://jb.gg/OpenSourceSupport)  (License Certificate for JetBrains All Products Pack)
 
 --------
 

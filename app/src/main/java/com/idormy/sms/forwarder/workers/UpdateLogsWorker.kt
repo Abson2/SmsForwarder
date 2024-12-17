@@ -14,13 +14,11 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-class UpdateLogsWorker(
-    context: Context,
-    workerParams: WorkerParameters,
-) : CoroutineWorker(context, workerParams) {
+class UpdateLogsWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         try {
-            val sendResponseJson = inputData.getString(Worker.updateLogs)
+            val sendResponseJson = inputData.getString(Worker.UPDATE_LOGS)
             Log.d("UpdateLogsWorker", "UpdateLogsWorker sendResponseJson: $sendResponseJson")
             val sendResponse = Gson().fromJson(sendResponseJson, SendResponse::class.java)
             if (sendResponse.logId == 0L) {
